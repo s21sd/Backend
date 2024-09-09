@@ -146,7 +146,7 @@ io.on('connection', (socket) => {
     });
 });
 
-function checkWin(board) {
+function checkForWin(board) {
     // Check rows, columns, and diagonals
     for (let i = 0; i < 3; i++) {
         if (board[i][0] && board[i][0] === board[i][1] && board[i][1] === board[i][2]) return true;
