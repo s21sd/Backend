@@ -9,7 +9,7 @@ const gameSessionSchema = new mongoose.Schema({
   player2: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Player',
-    required: true,
+    default: null
   },
   board: {
     type: [[String]],
