@@ -21,20 +21,16 @@ app.get('/', (req, res) => {
     res.send({ message: 'Server is working!' });
 });
 
-
-
-
 io.on('connection', (socket) => {
+    console.log('A user connected:', socket.id);
 
     socket.on('createGame', async ({ username }) => {
         try {
-
             const player = await Player.findOneAndUpdate(
                 { username },
                 { $inc: { totalGames: 1 } },
                 { new: true, upsert: true }
             );
-
 
             const newGame = new GameSession({
                 player1: player._id,
@@ -43,7 +39,6 @@ io.on('connection', (socket) => {
             });
 
             await newGame.save();
-
             socket.join(newGame._id.toString());
 
             socket.emit('Game_Created', { gameId: newGame._id, playerId: player._id });
@@ -77,7 +72,6 @@ io.on('connection', (socket) => {
             await game.save();
 
             socket.join(game._id.toString());
-
             io.to(game._id.toString()).emit('gamejoined', { gameId: game._id, playerId: player._id });
 
         } catch (error) {
@@ -86,93 +80,78 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Function For the make moves
     socket.on('makemove', async ({ gameId, playerId, x, y }) => {
-        try {
-            const game = await GameSession.findById(gameId);
-            console.log(game);
+        console.log(gameId, playerId);
+        const game = await GameSession.findById(gameId);
 
-            // Checking for the existence of the game
-            if (!game) {
-                socket.emit('Error', 'Game not Found');
-                return;
-            }
-
-            // Checking if the game is over or not
-            if (game.isGameOver) {
-                socket.emit('Error', 'Game Over');
-                return;
-            }
-
-            // Ensuring the turn of the player
-            if (game.currentTurn.toString() !== playerId) {
-                socket.emit('Error', 'Not your Turn');
-                return;
-            }
-
-            // Checking for the actual move
-            if (game.board[x][y] !== '') {
-                socket.emit('Error', 'Invalid Move');
-                return;
-            }
-
-            // Updating the current move
-            game.board[x][y] = game.currentTurn.equals(game.player1) ? 'X' : 'O';
-            game.totalMoves++;
-
-            // Checking for the winning state
-            if (checkForWin(game.board)) {
-                game.isGameOver = true;
-                game.winner = game.currentTurn;
-                await game.save();
-                io.to(game._id.toString()).emit('gameover', { winner: game.currentTurn });
-                return;
-            }
-
-            // Handling the draw case
-            if (game.totalMoves === 9) {
-                game.isGameOver = true;
-                await game.save();
-                io.to(game._id.toString()).emit('gameover', { winner: null });
-                return;
-            }
-
-            // Swapping turns
-            game.currentTurn = game.currentTurn.equals(game.player1) ? game.player2 : game.player1;
-            await game.save();
-
-            // Call the updateBoard function to notify clients of the new state
-            updateBoard(game);
-
-        } catch (error) {
-            console.error('Error making move:', error.message);
-            socket.emit('error', 'Could not make move.');
+        if (!game) {
+            socket.emit('Error', 'Game not Found');
+            return;
         }
+
+        if (game.isGameOver) {
+            socket.emit('Error', 'Game Over');
+            return;
+        }
+
+        if (game.currentTurn.toString() !== playerId) {
+            socket.emit('Error', 'Not your Turn');
+            return;
+        }
+
+        if (game.board[x][y] !== '') {
+            socket.emit('Error', 'Invalid Move');
+            return;
+        }
+
+        game.board[x][y] = game.currentTurn.equals(game.player1) ? 'X' : 'O';
+        game.totalMoves++;
+
+        if (checkForWin(game.board)) {
+            game.isGameOver = true;
+            game.winner = game.currentTurn;
+            await game.save();
+            io.to(game._id.toString()).emit('gameover', { winner: game.currentTurn });
+            return;
+        } else if (game.totalMoves === 9) {
+            game.isGameOver = true;
+            await game.save();
+            io.to(game._id.toString()).emit('gameover', { winner: null });
+            return;
+        }
+
+        game.currentTurn = game.currentTurn.equals(game.player1) ? game.player2 : game.player1;
+        await game.save();
+
+        io.to(game._id.toString()).emit('updateBoard', { board: game.board, currentTurn: game.currentTurn });
     });
 
-
+    socket.on('update', async ({ gameId }) => {
+        const game = await GameSession.findById(gameId);
+        console.log(game.board)
+        if (!game) {
+            socket.emit('Error', 'Game not Found');
+            return;
+        }
+        io.to(game._id.toString()).emit('updateBoard', { board: game.board, currentTurn: game.currentTurn });
+    });
 
     socket.on('disconnect', () => {
-        console.log('A user disconnected', socket.id);
+        console.log('A user disconnected:', socket.id);
     });
 });
-function updateBoard(game) {
-    io.to(game._id.toString()).emit('updateBoard', { board: game.board, currentTurn: game.currentTurn });
-}
 
 function checkForWin(board) {
-    // Check rows, columns, and diagonals
     for (let i = 0; i < 3; i++) {
         if (board[i][0] && board[i][0] === board[i][1] && board[i][1] === board[i][2]) return true;
         if (board[0][i] && board[0][i] === board[1][i] && board[1][i] === board[2][i]) return true;
     }
-    // Explicitly handling the diagonals
     if (board[0][0] && board[0][0] === board[1][1] && board[1][1] === board[2][2]) return true;
     if (board[0][2] && board[0][2] === board[1][1] && board[1][1] === board[2][0]) return true;
+
     return false;
 }
 
-
 server.listen(PORT, () => {
-    console.log(`Server is running on PORT ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
