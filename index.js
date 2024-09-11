@@ -88,63 +88,77 @@ io.on('connection', (socket) => {
 
     // Function For the make moves
     socket.on('makemove', async ({ gameId, playerId, x, y }) => {
-        const game = await GameSession.findById(gameId);
-        // checking for the existence of the game
-        if (!game) {
-            socket.emit('Error', 'Game not Found');
-            return;
-        }
-        // Checking if the game is over or not
-        if (game.isGameOver) {
-            socket.emit('Error', 'Game Over')
-            return;
-        }
-        // Ensuring the turn of the player
-        if (game.currentTurn.toString() !== playerId) {
-            socket.emit('Error', 'Not your Turn');
-            return;
-        }
+        try {
+            const game = await GameSession.findById(gameId);
+            console.log(game);
 
-        // Checking for the actual move
-        if (game.board[x][y] != '') {
-            socket.emit('Error', 'Invalid Move');
-            return;
-        }
-        // updating the current move
-        game.board[x][y] = game.currentTurn.equals(game.player1) ? 'X' : 'O';
-        game.totalMoves++;
+            // Checking for the existence of the game
+            if (!game) {
+                socket.emit('Error', 'Game not Found');
+                return;
+            }
 
-        // Checking for the winning state
-        if (checkForWin(game.board)) {
-            game.isGameOver = true;
-            game.winner = game.currentTurn;
-            await game.save();
-            io.to(game._id.toString()).emit('gameover', { winner: game.currentTurn });
-            return;
-        }
-        else {
-            // For the draw case 
+            // Checking if the game is over or not
+            if (game.isGameOver) {
+                socket.emit('Error', 'Game Over');
+                return;
+            }
+
+            // Ensuring the turn of the player
+            if (game.currentTurn.toString() !== playerId) {
+                socket.emit('Error', 'Not your Turn');
+                return;
+            }
+
+            // Checking for the actual move
+            if (game.board[x][y] !== '') {
+                socket.emit('Error', 'Invalid Move');
+                return;
+            }
+
+            // Updating the current move
+            game.board[x][y] = game.currentTurn.equals(game.player1) ? 'X' : 'O';
+            game.totalMoves++;
+
+            // Checking for the winning state
+            if (checkForWin(game.board)) {
+                game.isGameOver = true;
+                game.winner = game.currentTurn;
+                await game.save();
+                io.to(game._id.toString()).emit('gameover', { winner: game.currentTurn });
+                return;
+            }
+
+            // Handling the draw case
             if (game.totalMoves === 9) {
                 game.isGameOver = true;
                 await game.save();
                 io.to(game._id.toString()).emit('gameover', { winner: null });
                 return;
             }
+
+            // Swapping turns
+            game.currentTurn = game.currentTurn.equals(game.player1) ? game.player2 : game.player1;
+            await game.save();
+
+            // Call the updateBoard function to notify clients of the new state
+            updateBoard(game);
+
+        } catch (error) {
+            console.error('Error making move:', error.message);
+            socket.emit('error', 'Could not make move.');
         }
-        // Swapping their turns
-        game.currentTurn = game.currentTurn.equals(game.player1) ? game.player2 : game.player1;
-        await game.save();
+    });
 
-
-
-
-    })
 
 
     socket.on('disconnect', () => {
         console.log('A user disconnected', socket.id);
     });
 });
+function updateBoard(game) {
+    io.to(game._id.toString()).emit('updateBoard', { board: game.board, currentTurn: game.currentTurn });
+}
 
 function checkForWin(board) {
     // Check rows, columns, and diagonals
